@@ -3,7 +3,8 @@ library(credentials)
 gert::git_config_global_set("user.name", "rutved118")
 gert::git_config_global_set("user.email", "rutved118@gmail.com")   # use the email on your GitHub account
 
-credentials::set_github_pat()
+credentials::git_credential_forget("https://github.com")
+credentials::set_github_pat()   # paste the NEW token
 # prompts a popup asking you to enter your GitHub Personal Access Token
 
 gert::git_pull()                          # pull the most recent changes from GitHub
