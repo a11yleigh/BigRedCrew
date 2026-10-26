@@ -81,9 +81,15 @@ ppk = function(mu, sigma_t, lower = NULL, upper = NULL) {
 
 # 2. Data Ingestion, Cleaning & Preprocessing
 # ------------------------------------------------------------------------------
-# Load testData2.csv (path adapts to project or workspace working directory)
-data_path = if (file.exists("testData2.csv")) "testData2.csv" else "Project/testData2.csv"
-raw_pulse = read_csv(data_path, col_types = cols())
+# Import collected data (CSVs)
+# Data information:
+# throw_ID is the throw number (1-50 for actual data)
+# arm_speed is in revolutions per minute (RPM)
+# valgus_torque is in N*m
+# longitudinal_pos is the distance from the medial epicondyle bone (from bone towards the hand)
+# rotational_pos is the rotational angle from the ideal position (positive = CW looking from the shoulder to the hand)
+
+raw_pulse = read_csv("testData2.csv", col_types = cols())
 
 # Select relevant columns and clean column names
 pulse_data = raw_pulse %>%
