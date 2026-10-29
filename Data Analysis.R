@@ -3,7 +3,7 @@
 
 # Team Big Red Crew: Alexis Staveski, Ally Schwartz, Collin Shiang, Sophi Ramirez, Vedant Chavan
 # SYSEN 5300, Cornell University
-# Current Revision Date: 10/25/26
+# Current Revision Date: 10/28/26
 
 # This code will ... 
 # - importing data and doing any post-processing + formatting, noting what the ideal location distance and angle is from the medial bony bone on the elbow for each thrower. also note the order in which treatments were applied (relevant for block randomization)
@@ -12,9 +12,10 @@
 # - perform the factorial design analysis. set up a framwork for determing direct effects of longitudinal deviation, rotational deviation, and combined deviation, each controlling for the effects of fatigue from the throw order. calculate confidence intervals on the dbar values where necessary.
 # ^ rough descriptions - EDIT LATER
 
-
-# 1. Setup & Package Loading
 # ------------------------------------------------------------------------------
+
+
+# Import Packages
 # We load the tidyverse and statistical analysis packages used throughout SYSEN 5300.
 library(dplyr)    # For data manipulation and piping (%>%)
 library(readr)    # For reading CSV files
@@ -24,66 +25,19 @@ library(broom)    # For tidying regression and test outputs (tidy, glance)
 library(moments)  # For skewness and kurtosis
 library(ggpubr)   # For arranging multi-panel plots (ggarrange)
 
-# Course SPC functions can be sourced directly if available:
-if (file.exists("sysen/functions/functions_process_control.R")) {
-  source("sysen/functions/functions_process_control.R")
-}
+# Source Helper Functions - see file for descriptions.
+source("helper_functions.R")
 
-# Universal course plot theme (theme_classic with centered titles & clean borders)
-theme_set(
-  theme_classic(base_size = 14) +
-    theme(
-      legend.position = "bottom",
-      plot.title = element_text(hjust = 0.5),
-      plot.subtitle = element_text(hjust = 0.5),
-      plot.caption = element_text(hjust = 0.5),
-      axis.ticks = element_blank(),
-      axis.line = element_blank(),
-      panel.border = element_rect(fill = NA, color = "grey"),
-      plot.margin = margin(r = 10, t = 10, b = 10, l = 10)
-    )
-)
-
-# In-house course descriptive summary function
-describe = function(x) {
-  tibble(x) %>%
-    summarize(
-      mean     = mean(x, na.rm = TRUE),
-      sd       = sd(x, na.rm = TRUE),
-      skew     = moments::skewness(x, na.rm = TRUE),
-      kurtosis = moments::kurtosis(x, na.rm = TRUE)
-    ) %>%
-    mutate(
-      caption = paste(
-        "Mean: ", round(mean, 2), " | ",
-        "SD: ", round(sd, 2), " | ",
-        "Skewness: ", round(skew, 2), " | ",
-        "Kurtosis: ", round(kurtosis, 2),
-        sep = ""
-      )
-    )
-}
-
-# In-house capability and performance index functions (from Week 6)
-cp  = function(sigma_s, upper, lower) { abs(upper - lower) / (6 * sigma_s) }
-pp  = function(sigma_t, upper, lower) { abs(upper - lower) / (6 * sigma_t) }
-cpk = function(mu, sigma_s, lower = NULL, upper = NULL) {
-  a = if (!is.null(lower)) abs(mu - lower) / (3 * sigma_s) else NULL
-  b = if (!is.null(upper)) abs(upper - mu) / (3 * sigma_s) else NULL
-  if (!is.null(lower) & !is.null(upper)) min(a, b) else if (is.null(lower)) b else a
-}
-ppk = function(mu, sigma_t, lower = NULL, upper = NULL) {
-  a = if (!is.null(lower)) abs(mu - lower) / (3 * sigma_t) else NULL
-  b = if (!is.null(upper)) abs(upper - mu) / (3 * sigma_t) else NULL
-  if (!is.null(lower) & !is.null(upper)) min(a, b) else if (is.null(lower)) b else a
-}
+# Apply course ggplot theme across all visualizations
+set_theme()
 
 
-# 2. Data Ingestion, Cleaning & Preprocessing
 # ------------------------------------------------------------------------------
-# Import collected data (CSVs)
-# Data information:
-# throw_ID is the throw number (1-50 for actual data)
+
+# Import Experimental Data
+
+# data expected in CSV format
+# throw_ID is the throw number (1-50 for most trials)
 # arm_speed is in revolutions per minute (RPM)
 # valgus_torque is in N*m
 # longitudinal_pos is the distance from the medial epicondyle bone (from bone towards the hand)
@@ -119,6 +73,7 @@ pulse_data = raw_pulse %>%
 # - In this preliminary single-thrower test, treatments were conducted in sequential sets of 10 throws.
 # - For the multi-thrower study, each Thrower will act as a BLOCK, with the 5 treatment sets 
 #   randomized in order (5! = 120 possible permutations) to prevent fatigue confounding.
+
 pulse_data = pulse_data %>%
   mutate(
     # Identify the thrower (currently single thrower for test data)
@@ -339,54 +294,44 @@ print(chart_r)
 spec_lower = 27.0
 spec_upper = 39.0
 
-# Calculate point estimates for the four indices
+# Calculate point estimates for the four indices (cp, pp, cpk, ppk from helper_functions.R)
 est_cp  = cp(sigma_s = sigma_s_val, upper = spec_upper, lower = spec_lower)
 est_pp  = pp(sigma_t = sigma_t_val, upper = spec_upper, lower = spec_lower)
 est_cpk = cpk(mu = xbbar_val, sigma_s = sigma_s_val, lower = spec_lower, upper = spec_upper)
 est_ppk = ppk(mu = xbbar_val, sigma_t = sigma_t_val, lower = spec_lower, upper = spec_upper)
 
 # Theoretical 95% Confidence Intervals for Capability Indices
-# Degrees of freedom:
-# v_short = k * (nw - 1)
-# v_total = total_n - 1
-k_subgroups = nrow(stat_subgroups)
-nw_size     = first(stat_subgroups$nw)
-v_short     = k_subgroups * (nw_size - 1)
-v_total     = nrow(pulse_data) - 1
-
-se_cp  = est_cp * sqrt(1 / (2 * v_short))
-se_pp  = est_pp * sqrt(1 / (2 * v_total))
-se_cpk = est_cpk * sqrt(1 / (2 * v_short) + 1 / (9 * nrow(pulse_data) * (est_cpk^2)))
-se_ppk = est_ppk * sqrt(1 / (2 * v_total) + 1 / (9 * nrow(pulse_data) * (est_ppk^2)))
-
-capability_summary = tibble(
-  index    = c("Cp", "Cpk", "Pp", "Ppk"),
-  sigma    = c("sigma_short", "sigma_short", "sigma_total", "sigma_total"),
-  estimate = c(est_cp, est_cpk, est_pp, est_ppk),
-  se       = c(se_cp, se_cpk, se_pp, se_ppk),
-  lower_95 = estimate - qnorm(0.975) * se,
-  upper_95 = estimate + qnorm(0.975) * se
+# (Computed via calc_capability_summary() from helper_functions.R)
+capability_summary = calc_capability_summary(
+  mu            = xbbar_val,
+  sigma_s       = sigma_s_val,
+  sigma_t       = sigma_t_val,
+  lower         = spec_lower,
+  upper         = spec_upper,
+  n_subgroups   = nrow(stat_subgroups),
+  subgroup_size = first(stat_subgroups$nw),
+  n_total       = nrow(pulse_data)
 )
 print(capability_summary)
 
 # NOTE ON UNCERTAINTY & BOOTSTRAPPING:
-# If the theoretical confidence intervals are wide, straddle 1.0, or if the underlying
+# If theoretical confidence intervals are wide, straddle 1.0, or if the underlying
 # normality assumption is violated (e.g., severe skewness in rotated placements),
-# BOOTSTRAPPING with replacement (sample_n(size = n(), replace = TRUE)) is required
-# to obtain empirical percentiles (2.5% and 97.5%) for the capability indices.
+# BOOTSTRAPPING with replacement is required to obtain empirical percentiles.
 #
-# Skeleton for Bootstrapping Capability Indices:
-# set.seed(5300)
-# boot_indices = tibble(rep = 1:1000) %>%
-#   group_by(rep) %>%
-#   reframe(pulse_data) %>%
-#   group_by(rep) %>%
-#   sample_n(size = n(), replace = TRUE) %>%
-#   summarize(
-#     boot_mu = mean(valgus_torque),
-#     boot_sigma_t = sd(valgus_torque),
-#     boot_ppk = ppk(boot_mu, boot_sigma_t, spec_lower, spec_upper)
-#   )
+# Available from helper_functions.R:
+# get_index(x, y, index, upper, lower, bootstrap_reps = 1000, ci_level = 0.95, by_subgroup = TRUE)
+#
+# Example bootstrap evaluation for Cpk:
+# boot_cpk = get_index(
+#   x = pulse_data$set_order,
+#   y = pulse_data$valgus_torque,
+#   index = "cpk",
+#   upper = spec_upper,
+#   lower = spec_lower,
+#   bootstrap_reps = 1000
+# )
+# print(boot_cpk)
 
 
 # 6. Factorial Design Analysis: Direct Effects & Interactions
@@ -441,14 +386,16 @@ error_pooled = groups %>%
   )
 
 # Direct Effects Table with 95% Confidence Intervals
-direct_effects = dbbar_direct %>%
-  mutate(
-    se       = error_pooled$se,
-    lower_95 = dbar - qnorm(0.975) * se,
-    upper_95 = dbar + qnorm(0.975) * se,
-    label    = paste(round(dbar, 2), " [", round(lower_95, 2), ", ", round(upper_95, 2), "]", sep = "")
-  )
+# (Computed using calc_direct_effects_table() from helper_functions.R)
+direct_effects = calc_direct_effects_table(
+  dbar_df   = dbbar_direct,
+  se_pooled = error_pooled$se
+)
 print(direct_effects)
+
+# Note: For standard 2^k factorial designs, functions from helper_functions.R can be used:
+# - se_factorial(formula, data) to estimate pooled SE across factorial groups
+# - dbar_oneway(), dbar_twoway(), dbar_threeway() for main and interaction effects
 
 # 6D. Linear Model Controlling for Fatigue (Throw Sequence / Block)
 # In SYSEN 5300, lm() models both direct effects and two-way interaction (* operator),

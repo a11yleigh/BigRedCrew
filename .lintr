@@ -1,0 +1,6 @@
+# helps with displaying unnecessary warnings
+
+linters: linters_with_defaults(
+    line_length_linter(1000)
+    # trailing_whitespace_linter = NULL
+  )
