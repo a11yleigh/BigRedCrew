@@ -43,7 +43,7 @@ set_theme()
 # longitudinal_pos is the distance from the medial epicondyle bone (from bone towards the hand)
 # rotational_pos is the rotational angle from the ideal position (positive = CW looking from the shoulder to the hand)
 
-raw_pulse = read_csv("testData2.csv", col_types = cols())
+throw_data = read_csv("throwData_10.29.csv", col_types = cols())
 
 # Select relevant columns and clean column names
 pulse_data = raw_pulse %>%
@@ -144,43 +144,6 @@ plot_speed_dist = pulse_data %>%
 # Display distribution plots
 print(plot_torque_dist)
 print(plot_speed_dist)
-
-# 3C. Fatigue / Time Trend Check: Torque vs. Throw Order
-# A scatter plot with a linear best fit to assess whether arm fatigue causes a systematic drift.
-plot_fatigue_trend = pulse_data %>%
-  ggplot(mapping = aes(x = throw_ID, y = valgus_torque)) +
-  geom_point(color = "grey30", size = 2.5, alpha = 0.8) +
-  geom_smooth(method = "lm", color = "firebrick", se = TRUE, fill = "lightpink", alpha = 0.3) +
-  labs(
-    title = "Fatigue Trend: Valgus Torque vs. Throw Sequence",
-    subtitle = "Testing for downward drift across sequential throws",
-    x = "Throw Order (Sequential Throw ID)",
-    y = "Peak Valgus Torque (N*m)"
-  )
-print(plot_fatigue_trend)
-
-# 3D. Process Overview Diagram (Jittered Boxplot + Marginal Flipped Histogram)
-# Following the course ggprocess() design from Recitation 5 & SPC Learning Check
-box_panel = pulse_data %>%
-  ggplot(mapping = aes(x = factor(set_order), y = valgus_torque)) +
-  geom_hline(aes(yintercept = mean(valgus_torque)), color = "lightgrey", size = 2) +
-  geom_jitter(height = 0, width = 0.2, color = "steelblue", alpha = 0.6) +
-  geom_boxplot(fill = NA, color = "black", outlier.shape = NA) +
-  labs(
-    title = "Process Overview: Torque Across 10-Throw Sets",
-    x = "Treatment Set (10 Throws Each)",
-    y = "Valgus Torque (N*m)",
-    caption = torque_desc$caption
-  )
-
-hist_panel = pulse_data %>%
-  ggplot(mapping = aes(x = valgus_torque)) +
-  geom_histogram(bins = 15, color = "white", fill = "grey70") +
-  theme_void() +
-  coord_flip()
-
-process_overview = ggarrange(box_panel, hist_panel, widths = c(4, 1), align = "h")
-print(process_overview)
 
 
 # 4. Statistical Process Control (SPC) & Control Charts
