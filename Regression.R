@@ -136,6 +136,56 @@ m2 %>%
 # Does adding interaction terms improve the model fit?
 anova(m1, m2)
 
+# Checking m3
+m3 = regression_data %>%
+  lm(formula = valgus_torque ~ rotation)
+
+# Full model summary
+summary(m3)
+
+# Coefficients and confidence intervals
+m3 %>%
+  tidy(conf.int = TRUE)
+
+# Model-level statistics
+m3 %>%
+  glance()
+
+
+
+# Calculate each thrower's ideal-position average
+ideal_baselines = regression_data %>%
+  filter(rotation == "0") %>%
+  group_by(thrower) %>%
+  summarize(
+    ideal_torque = mean(valgus_torque),
+    .groups = "drop"
+  )
+
+# Calculate deviation from each person's ideal torque
+deviation_data = regression_data %>%
+  left_join(ideal_baselines, by = "thrower") %>%
+  mutate(
+    torque_deviation = valgus_torque - ideal_torque,
+    percent_deviation =
+      100 * (valgus_torque - ideal_torque) / ideal_torque
+  )
+
+# Model A: Rotation predicting torque deviation in Nm
+m_deviation = lm(
+  torque_deviation ~ rotation,
+  data = deviation_data
+)
+
+summary(m_deviation)
+
+# Model B: Rotation predicting percentage deviation
+m_percent = lm(
+  percent_deviation ~ rotation,
+  data = deviation_data
+)
+
+summary(m_percent)
 
 # --------------------------------------------------------
 # SECONDARY ANALYSIS: ROTATION VS IDEAL POSITION
