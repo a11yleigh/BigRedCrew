@@ -130,44 +130,80 @@ cat("Sensor placement conditions:", paste(levels(pulse_data$sensor_placement), c
 glimpse(pulse_data)
 
 
-
 # ------------------------------------------------------------------------------
 
 # Visualize raw data with distributions
 
-# Compute distribution statistics for peak torque and arm speed using course describe()
+# compute mean, SD, skewness, kurtosis with helper function
 torque_desc = pulse_data$valgus_torque %>% describe()
 speed_desc  = pulse_data$arm_speed %>% describe()
 
-# 3A. Distribution of Peak Valgus Torque (Histogram + Density Curve)
-plot_torque_dist = pulse_data %>%
-  ggplot(mapping = aes(x = valgus_torque)) +
-  geom_histogram(aes(y = after_stat(density)), bins = 15, fill = "steelblue", color = "white", alpha = 0.7) +
-  geom_density(color = "darkblue", size = 1) +
+# create plots:
+
+# 1. Histogram for each person's torque
+plot_torque_hist_ind = pulse_data %>%
+  ggplot() +
+  geom_histogram(mapping = aes(x = valgus_torque, fill = thrower), bins = 15, color = "white", alpha = 0.7, show.legend = FALSE) +
+  facet_wrap(~ thrower, scales = "free_y") +
   labs(
-    title = "Distribution of Peak Valgus Torque",
-    subtitle = "Observed across all sensor placement trials",
+    title = "Distribution of Peak Valgus Torque by Thrower",
     x = "Peak Valgus Torque (N*m)",
-    y = "Density",
-    caption = torque_desc$caption
+    y = "Count"
   )
 
-# 3B. Distribution of Arm Speed (Histogram + Density Curve)
-plot_speed_dist = pulse_data %>%
-  ggplot(mapping = aes(x = arm_speed)) +
-  geom_histogram(aes(y = after_stat(density)), bins = 15, fill = "darkseagreen", color = "white", alpha = 0.7) +
-  geom_density(color = "darkgreen", size = 1) +
+# 2. Scatter plot for each person's torque across sensor placements
+plot_torque_scatter_ind = pulse_data %>%
+  ggplot() +
+  geom_jitter(mapping = aes(x = sensor_placement, y = valgus_torque, color = thrower), width = 0.2, height = 0, size = 2, alpha = 0.7, show.legend = FALSE) +
+  facet_wrap(~ thrower, scales = "free_x") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(
-    title = "Distribution of Arm Speed",
-    subtitle = "Observed across all sensor placement trials",
-    x = "Arm Speed (rpm)",
-    y = "Density",
-    caption = speed_desc$caption
+    title = "Peak Valgus Torque by Sensor Placement for Each Thrower",
+    x = "Sensor Placement",
+    y = "Peak Valgus Torque (N*m)"
   )
 
-# Display distribution plots
-print(plot_torque_dist)
-print(plot_speed_dist)
+# 3. Histogram for each person's arm speed
+plot_speed_hist_ind = pulse_data %>%
+  ggplot() +
+  geom_histogram(mapping = aes(x = arm_speed, fill = thrower), bins = 15, color = "white", alpha = 0.7, show.legend = FALSE) +
+  facet_wrap(~ thrower, scales = "free_y") +
+  labs(
+    title = "Distribution of Arm Speed by Thrower",
+    x = "Arm Speed (rpm)",
+    y = "Count"
+  )
+
+# 4. Scatter plot for all throwers' torque across sensor placements
+plot_torque_scatter_all = pulse_data %>%
+  ggplot() +
+  geom_jitter(mapping = aes(x = sensor_placement, y = valgus_torque, color = thrower), width = 0.2, height = 0, size = 2.5, alpha = 0.8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Peak Valgus Torque across Sensor Placements (All Throwers)",
+    x = "Sensor Placement",
+    y = "Peak Valgus Torque (N*m)",
+    color = "Thrower"
+  )
+
+# 5. Scatter plot for all throwers' arm speed across sensor placements
+plot_speed_scatter_all = pulse_data %>%
+  ggplot() +
+  geom_jitter(mapping = aes(x = sensor_placement, y = arm_speed, color = thrower), width = 0.2, height = 0, size = 2.5, alpha = 0.8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    title = "Arm Speed across Sensor Placements (All Throwers)",
+    x = "Sensor Placement",
+    y = "Arm Speed (rpm)",
+    color = "Thrower"
+  )
+
+# Display plots
+print(plot_torque_hist_ind)
+print(plot_torque_scatter_ind)
+print(plot_speed_hist_ind)
+print(plot_torque_scatter_all)
+print(plot_speed_scatter_all)
 
 
 # 4. Statistical Process Control (SPC) & Control Charts
