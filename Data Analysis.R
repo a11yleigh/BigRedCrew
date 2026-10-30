@@ -34,83 +34,107 @@ set_theme()
 
 # ------------------------------------------------------------------------------
 
-# Import Experimental Data
+# Import Experimental Data - data expected in CSV format
+raw_data = read_csv("throwData_10.29.csv", col_types = cols())
+# throw_data %>% head()
 
-# data expected in CSV format
+# thrower_ID is who is throwing
 # throw_ID is the throw number (1-50 for most trials)
+# sensor_placement indicates what treatment is being applied
+# ideal_long_dist is the ideal distance from the medial epicondyle for that thrower (usually 4.5cm)
 # arm_speed is in revolutions per minute (RPM)
 # valgus_torque is in N*m
 # longitudinal_pos is the distance from the medial epicondyle bone (from bone towards the hand)
 # rotational_pos is the rotational angle from the ideal position (positive = CW looking from the shoulder to the hand)
 
-throw_data = read_csv("throwData_10.29.csv", col_types = cols())
+# ideal placement is at ideal_long_dist, 0 deg rotation.
 
-# Select relevant columns and clean column names
-pulse_data = raw_pulse %>%
+# Experimental Design Notes:
+#   In this preliminary single-thrower test, treatments were conducted in sequential sets of 10 throws.
+#   For the multi-thrower study, each Thrower will act as a BLOCK, with the 5 treatment sets 
+#   randomized in order (5! = 120 possible permutations) to prevent fatigue confounding.
+
+
+# ------------------------------------------------------------------------------
+
+# Process Data
+pulse_data = raw_data %>%
+  # Select and order core measurement columns
   select(
+    thrower_ID,
     throw_ID,
     arm_speed,
     valgus_torque,
     longitudinal_pos,
-    rotational_pos
+    rotational_pos,
+    ideal_long_dist,
+    sensor_placement
   ) %>%
-  filter(!is.na(throw_ID)) %>%
-  # Data Hygiene Correction:
-  # In throws 69 and 70, arm_speed and valgus_torque were transposed during data entry
+  # Filter out bad data if it exists
+  filter(!is.na(throw_ID), !is.na(valgus_torque), !is.na(arm_speed)) %>%
   mutate(
-    temp_speed = arm_speed,
-    arm_speed = if_else(throw_ID %in% c(69, 70), valgus_torque, arm_speed),
-    valgus_torque = if_else(throw_ID %in% c(69, 70), temp_speed, valgus_torque)
+    # Identify thrower as a factor to simplify the label + to be used in blocking
+    thrower = factor(paste("Thrower", thrower_ID)),
+
+    # Calculate anatomical deviations from ideal baseline (ideal_long_dist and 0 deg rotation)
+    longitudinal_dev = longitudinal_pos - ideal_long_dist,
+    rotational_dev   = rotational_pos,
+
+    # add sensor_placement labels directly if any entries are missing in raw CSV    FIX THIS LATER TO BE JUST IN THE CSV
+    sensor_placement = case_when(
+      !is.na(sensor_placement) & sensor_placement != "" ~ sensor_placement,
+      longitudinal_dev == 0 & rotational_pos == 0       ~ "ideal",
+      rotational_pos == 90                              ~ "rot_90",
+      rotational_pos == 180                             ~ "rot_180",
+      longitudinal_dev == 4.5                           ~ "long_9cm",
+      longitudinal_dev == 9                             ~ "long_13.5cm",
+      longitudinal_dev == -9                            ~ "long_-4.5cm",
+      longitudinal_dev == -13.5                         ~ "long_-9cm",
+      TRUE                                              ~ paste0("pos_", longitudinal_pos)
+    ),
+
+    # Convert sensor_placement to a factor with "ideal" as the reference (first) level
+    sensor_placement = factor(
+      sensor_placement,
+      levels = c("ideal", setdiff(unique(sensor_placement), "ideal"))
+    ),
+
+    # Combined condition key for grouping
+    condition_group = paste0(longitudinal_dev, "cm_", rotational_dev, "deg")
   ) %>%
-  select(-temp_speed)
 
-# Anatomical Reference Notes:
-# - Ideal sensor placement: 4.5 cm distal to medial epicondyle (medial bone), 0 deg rotation.
-# - Longitudinal Deviation = longitudinal_pos - 4.5 cm (0 cm = Ideal).
-# - Rotational Deviation   = rotational_pos (0 deg = Ideal).
-#
-# Experimental Design & Block Randomization Notes:
-# - In this preliminary single-thrower test, treatments were conducted in sequential sets of 10 throws.
-# - For the multi-thrower study, each Thrower will act as a BLOCK, with the 5 treatment sets 
-#   randomized in order (5! = 120 possible permutations) to prevent fatigue confounding.
-
-pulse_data = pulse_data %>%
-  mutate(
-    # Identify the thrower (currently single thrower for test data)
-    thrower = factor("Thrower 1"),
-
-    # Track the chronological treatment set (1 to 7)
-    set_order = as.integer(ceiling(throw_ID / 10)),
-    
-    # Calculate longitudinal deviation from ideal (4.5 cm)
-    longitudinal_dev = longitudinal_pos - 4.5,
-    
-    # Convert deviations to factors with the IDEAL / baseline condition as the FIRST level.
-    # Following course conventions, the reference group must be first so differences (dbar)
-    # and linear model contrasts directly measure changes against ideal baseline.
-    longitudinal_dev_f = factor(
-      as.character(longitudinal_dev),
-      levels = c("0", "4.5", "9", "-9", "-13.5")
-    ),
-    rotational_pos_f = factor(
-      as.character(rotational_pos),
-      levels = c("0", "90", "180")
-    ),
-    
-    # Combined condition label for subgrouping
-    condition_group = paste(longitudinal_dev, "cm_", rotational_pos, "deg", sep = "")
+  # select certain columns to keep for actual data analysis
+  select(
+    thrower,
+    sensor_placement,
+    arm_speed,
+    valgus_torque,
+    longitudinal_dev,
+    rotational_dev,
+    condition_group
   )
 
-# Data Completeness Check / Missing Data Notes:
-# - Missing multi-thrower variation: currently n = 1 thrower (70 throws).
-# - Missing full factorial interaction combinations: this dataset tests deviations along one 
-#   axis at a time (e.g., no joint condition where longitudinal = 9 cm AND rotational = 90 deg).
-# - Post-throw displacement was removed from scope as displacement was observed to be minimal.
+# Data Ingestion Summary
+cat("--- Data Ingestion Summary ---\n")
+cat("Total valid throws imported:", nrow(pulse_data), "\n")
+cat("Throwers included:", paste(levels(pulse_data$thrower), collapse = ", "), "\n")
+cat("Sensor placement conditions:", paste(levels(pulse_data$sensor_placement), collapse = ", "), "\n\n")
+
+# Treatment breakdown per thrower
+# print(
+#   pulse_data %>%
+#     count(thrower, sensor_placement, condition_group, name = "throws_count")
+# )
+
+# look at organized data
 glimpse(pulse_data)
 
 
-# 3. Initial Data Visualization & Distributional Analysis
+
 # ------------------------------------------------------------------------------
+
+# Visualize raw data with distributions
+
 # Compute distribution statistics for peak torque and arm speed using course describe()
 torque_desc = pulse_data$valgus_torque %>% describe()
 speed_desc  = pulse_data$arm_speed %>% describe()
