@@ -96,6 +96,7 @@ pulse_data = raw_data %>%
   # select certain columns to keep for actual data analysis
   select(
     thrower,
+    throw_ID,
     sensor_placement,
     arm_speed,
     valgus_torque,
@@ -460,9 +461,11 @@ print(factorial_effects_interaction, width = Inf)
 
 
 
-# plot dbars with 95% confidence intervals for each treatment across throwers
+# plot dbars with 95% confidence intervals for each treatment across throwers (in percent deviation)
 plot_effects_data = bind_rows(
   lapply(thrower_list, function(th) {
+    mean_ideal = mean(pulse_data %>% filter(thrower == th, sensor_placement == "ideal") %>% pull(valgus_torque))
+
     # longitudinal
     sub_l = factorial_data_2x2 %>% filter(thrower == th, rot_factor == "0deg")
     res_l = calc_direct_effects_table(
@@ -495,7 +498,12 @@ plot_effects_data = bind_rows(
     }
 
     bind_rows(res_l, res_r90, res_r180, res_comb) %>%
-      mutate(thrower = th)
+      mutate(
+        thrower   = th,
+        dbar_pct  = (dbar / mean_ideal) * 100,
+        lower_pct = (lower_95 / mean_ideal) * 100,
+        upper_pct = (upper_95 / mean_ideal) * 100
+      )
   }) %>% bind_rows()
 ) %>%
   mutate(
@@ -509,22 +517,22 @@ plot_dbars_ci = plot_effects_data %>%
   ggplot() +
   geom_hline(yintercept = 0, linetype = "dashed", color = "darkgrey", linewidth = 0.8) +
   geom_errorbar(
-    mapping = aes(x = treatment_name, ymin = lower_95, ymax = upper_95, color = thrower),
+    mapping = aes(x = treatment_name, ymin = lower_pct, ymax = upper_pct, color = thrower),
     position = position_dodge(width = 0.6),
     width = 0.2,
     linewidth = 0.8
   ) +
   geom_point(
-    mapping = aes(x = treatment_name, y = dbar, color = thrower),
+    mapping = aes(x = treatment_name, y = dbar_pct, color = thrower),
     position = position_dodge(width = 0.6),
     size = 3
   ) +
   theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
   labs(
-    title = "Direct Treatment Effects (dbar) on Valgus Torque with 95% CI",
-    subtitle = "Differences relative to ideal placement (dashed line = 0 baseline)",
+    title = "Direct Treatment Effects (% Deviation) on Valgus Torque with 95% CI",
+    subtitle = "Percent deviation relative to ideal placement (dashed line = 0% baseline)",
     x = "Treatment Condition",
-    y = "dbar: Valgus Torque Difference (N*m)",
+    y = "Valgus Torque Percent Deviation (%)",
     color = "Thrower"
   )
 
@@ -564,10 +572,126 @@ plot_interaction = interaction_plot_data %>%
 # display plots
 print(plot_dbars_ci)
 print(plot_interaction)
-
+ggsave("dbars.png", plot_dbars_ci)
 
 
 # ------------------------------------------------------------------------------
-# Regression Analysis: Direct Effects & Interactions
+# Regression Analysis: Percent Deviation Models (Blocked by Thrower & Throw Order)
 # ------------------------------------------------------------------------------
 
+# ensure throw_ID is present in pulse_data (e.g. if running this block in an active R session)
+if (!"throw_ID" %in% names(pulse_data)) {
+  if (exists("raw_data") && "throw_ID" %in% names(raw_data)) {
+    pulse_data$throw_ID = raw_data$throw_ID
+  } else {
+    pulse_data = pulse_data %>% group_by(thrower) %>% mutate(throw_ID = row_number()) %>% ungroup()
+  }
+}
+
+# subset for pure longitudinal displacement (ideal vs. long_displaced at 0 deg)
+pulse_long = pulse_data %>%
+  filter(sensor_placement %in% c("ideal", "long_displaced")) %>%
+  mutate(longitudinal = factor(longitudinal_dev, levels = c(0, 4.5)))
+
+# subset for pure rotational misplacement (ideal, rot_90, rot_180 at 0 cm)
+pulse_rot = pulse_data %>%
+  filter(sensor_placement %in% c("ideal", "rot_90", "rot_180")) %>%
+  mutate(rotation = factor(rotational_dev, levels = c(0, 90, 180)))
+
+# subset for 2x2 factorial interaction (ideal, long_displaced, rot_90, long_and_rot90)
+pulse_2x2 = pulse_data %>%
+  filter(sensor_placement %in% c("ideal", "long_displaced", "rot_90", "long_and_rot90")) %>%
+  mutate(
+    longitudinal = factor(longitudinal_dev, levels = c(0, 4.5)),
+    rotation     = factor(rotational_dev, levels = c(0, 90))
+  )
+
+# fit regression models blocking/controlling for thrower and throw order (throw_ID)
+m_long = lm(pct_deviation ~ longitudinal + thrower + throw_ID, data = pulse_long)
+m_rot  = lm(pct_deviation ~ rotation + thrower + throw_ID, data = pulse_rot)
+m_int  = lm(pct_deviation ~ longitudinal * rotation + thrower + throw_ID, data = pulse_2x2)
+
+# Model Performance Comparison Table
+models_list = list(
+  "Model 1: Longitudinal (Blocked)" = m_long,
+  "Model 2: Rotational (Blocked)"   = m_rot,
+  "Model 3: Interaction (Blocked)"  = m_int
+)
+
+formula_labels = c(
+  "pct_deviation ~ longitudinal + thrower + throw_ID",
+  "pct_deviation ~ rotation + thrower + throw_ID",
+  "pct_deviation ~ longitudinal * rotation + thrower + throw_ID"
+)
+
+regression_models_summary = tibble(
+  model         = names(models_list),
+  formula       = formula_labels,
+  r_squared     = sapply(models_list, function(m) round(summary(m)$r.squared, 4)),
+  adj_r_squared = sapply(models_list, function(m) round(summary(m)$adj.r.squared, 4)),
+  residual_se   = sapply(models_list, function(m) round(summary(m)$sigma, 2)),
+  f_statistic   = sapply(models_list, function(m) round(summary(m)$fstatistic[1], 2)),
+  p_value       = sapply(models_list, function(m) {
+    f = summary(m)$fstatistic
+    round(pf(f[1], f[2], f[3], lower.tail = FALSE), 4)
+  })
+)
+
+# Model Coefficients Table for all three models
+regression_coefs_summary = bind_rows(
+  lapply(names(models_list), function(m_name) {
+    m = models_list[[m_name]]
+    tidy(m, conf.int = TRUE) %>%
+      mutate(
+        model       = m_name,
+        estimate    = round(estimate, 2),
+        std_error   = round(std.error, 2),
+        t_statistic = round(statistic, 2),
+        p_value     = round(p.value, 4),
+        "95% CI"    = paste0("[", round(conf.low, 2), ", ", round(conf.high, 2), "]")
+      ) %>%
+      select(model, term, estimate, std_error, t_statistic, p_value, "95% CI")
+  })
+)
+
+# show summary tables
+print(regression_models_summary, width = Inf)
+print(regression_coefs_summary, n = Inf, width = Inf)
+
+# Scatter plot with lines of best fit for the highest R^2 model (Model 2: Rotational)
+plot_regression_best_fit = pulse_rot %>%
+  ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgrey", linewidth = 0.8) +
+  geom_jitter(
+    mapping = aes(x = rotational_dev, y = pct_deviation, color = thrower),
+    width = 3,
+    size = 2.5,
+    alpha = 0.7
+  ) +
+  geom_smooth(
+    mapping = aes(x = rotational_dev, y = pct_deviation, color = thrower),
+    method = "lm",
+    se = TRUE,
+    linewidth = 1,
+    alpha = 0.15
+  ) +
+  geom_smooth(
+    mapping = aes(x = rotational_dev, y = pct_deviation),
+    method = "lm",
+    color = "black",
+    linetype = "solid",
+    se = FALSE,
+    linewidth = 1.2
+  ) +
+  scale_x_continuous(breaks = c(0, 90, 180), labels = c("0° (Ideal)", "90°", "180°")) +
+  labs(
+    title = "Best-Fit Regression: Percent Torque Deviation vs. Rotational Misplacement",
+    subtitle = "Model 2 (R² = 0.4751) | Black line = combined trend",
+    x = "Rotational Misplacement (Degrees)",
+    y = "Valgus Torque Percent Deviation from Ideal (%)",
+    color = "Thrower"
+  )
+
+# display plot
+print(plot_regression_best_fit)
+ggsave("regressionline.png", plot_regression_best_fit)
