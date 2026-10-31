@@ -60,14 +60,12 @@ library(moments)
 # theme_classic with centered title/subtitle/caption, clean borders, bottom legend.
 set_theme = function() {
   theme_set(
-    theme_classic(base_size = 14) +
+    theme_bw(base_size = 14) +
       theme(
-        legend.position = "bottom",
+        legend.position = "right",
         plot.title      = element_text(hjust = 0.5),
         plot.subtitle   = element_text(hjust = 0.5),
         plot.caption    = element_text(hjust = 0.5),
-        axis.ticks      = element_blank(),
-        axis.line       = element_blank(),
         panel.border    = element_rect(fill = NA, color = "grey"),
         plot.margin     = margin(r = 0)
       )
