@@ -148,3 +148,43 @@ print(capability_summary)
 # )
 # print(boot_cpk)
 
+# ------------------------------------------------------------------------------
+# Temporary: Quick check of Tables 1 & 2 on Thrower 1 from testData2.csv
+# ------------------------------------------------------------------------------
+td2 = read_csv("testData2.csv", show_col_types = FALSE) %>%
+  filter(thrower_ID == 1) %>%
+  mutate(across(c(valgus_torque, longitudinal_pos, rotational_pos), as.numeric))
+
+y_id   = td2 %>% filter(longitudinal_pos == 4.5, rotational_pos == 0) %>% pull(valgus_torque)
+y_lg   = td2 %>% filter(longitudinal_pos == 9.0, rotational_pos == 0) %>% pull(valgus_torque)
+y_r90  = td2 %>% filter(longitudinal_pos == 4.5, rotational_pos == 90) %>% pull(valgus_torque)
+y_r180 = td2 %>% filter(longitudinal_pos == 4.5, rotational_pos == 180) %>% pull(valgus_torque)
+
+m_id   = mean(y_id)
+f_calc = function(y_trt, name) {
+  d   = mean(y_trt) - m_id
+  se  = sqrt(var(y_id)/length(y_id) + var(y_trt)/length(y_trt))
+  dp  = (d / m_id) * 100
+  sep = (se / m_id) * 100
+  list(d = round(d, 2), se = round(se, 2), ci = paste0("[", round(d - 1.96 * se, 2), ", ", round(d + 1.96 * se, 2), "]"),
+       dp = round(dp, 2), sep = round(sep, 2), cip = paste0("[", round(dp - 1.96 * sep, 2), "%, ", round(dp + 1.96 * sep, 2), "%]"))
+}
+
+res_lg   = f_calc(y_lg)
+res_r90  = f_calc(y_r90)
+res_r180 = f_calc(y_r180)
+
+cat("\n--- testData2 Thrower 1: Table 1 (Longitudinal) ---\n")
+print(tibble(thrower = "Thrower 1", "dbar (N*m)" = res_lg$d, "se (N*m)" = res_lg$se, "95% CI (N*m)" = res_lg$ci,
+             "dbar (%)" = res_lg$dp, "se (%)" = res_lg$sep, "95% CI (%)" = res_lg$cip), width = Inf)
+
+cat("\n--- testData2 Thrower 1: Table 2 (Rotational) ---\n")
+print(tibble(thrower = "Thrower 1",
+             "dbar rot90 (N*m)" = res_r90$d, "se rot90 (N*m)" = res_r90$se, "95% CI rot90 (N*m)" = res_r90$ci,
+             "dbar rot90 (%)" = res_r90$dp, "se rot90 (%)" = res_r90$sep, "95% CI rot90 (%)" = res_r90$cip,
+             "dbar rot180 (N*m)" = res_r180$d, "se rot180 (N*m)" = res_r180$se, "95% CI rot180 (N*m)" = res_r180$ci,
+             "dbar rot180 (%)" = res_r180$dp, "se rot180 (%)" = res_r180$sep, "95% CI rot180 (%)" = res_r180$cip), width = Inf)
+
+
+
+
