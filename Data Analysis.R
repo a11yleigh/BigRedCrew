@@ -556,8 +556,8 @@ plot_dbars_ci = plot_effects_data %>%
   ) +
   theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
   labs(
-    title = "Percent Torque Deviation vs. Rotational Misplacement",
-    subtitle = "Descriptive linear trends by thrower | Black line = pooled trend",
+    title = "Direct Treatment Effects (% Deviation) on Valgus Torque with 95% CI",
+    subtitle = "Percent deviation relative to ideal placement (dashed line = 0% baseline)",
     x = "Treatment Condition",
     y = "Valgus Torque Percent Deviation (%)",
     color = "Thrower"
@@ -720,8 +720,8 @@ plot_regression_best_fit = pulse_rot %>%
   ) +
   scale_x_continuous(breaks = c(0, 90, 180), labels = c("0° (Ideal)", "90°", "180°")) +
   labs(
-    title = "Best-Fit Regression: Percent Torque Deviation vs. Rotational Misplacement",
-    subtitle = "Model 2 (R² = 0.4751) | Black line = combined trend",
+    title = "Percent Torque Deviation vs. Rotational Misplacement",
+    subtitle = "Descriptive linear trends by thrower | Black line = pooled trend",
     x = "Rotational Misplacement (Degrees)",
     y = "Valgus Torque Percent Deviation from Ideal (%)",
     color = "Thrower"
