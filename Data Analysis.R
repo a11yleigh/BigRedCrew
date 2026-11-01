@@ -34,6 +34,31 @@ source("helper_functions.R")
 
 # Import Experimental Data - data expected in CSV format
 raw_data = read_csv("throwData_10.31.csv", col_types = cols())
+
+# Check that treatment labels match the recorded sensor positions
+placement_check = raw_data %>%
+  mutate(
+    expected_placement = case_when(
+      longitudinal_pos == ideal_long_dist & rotational_pos == 0 ~ "ideal",
+      longitudinal_pos == ideal_long_dist + 4.5 & rotational_pos == 0 ~ "long_displaced",
+      longitudinal_pos == ideal_long_dist & rotational_pos == 90 ~ "rot_90",
+      longitudinal_pos == ideal_long_dist & rotational_pos == 180 ~ "rot_180",
+      longitudinal_pos == ideal_long_dist + 4.5 & rotational_pos == 90 ~ "long_and_rot90",
+      TRUE ~ NA_character_
+    )
+  )
+
+mismatches = placement_check %>%
+  filter(
+    is.na(expected_placement) |
+      is.na(sensor_placement) |
+      sensor_placement != expected_placement
+  )
+
+if (nrow(mismatches) > 0) {
+  print(mismatches)
+  stop("Sensor placement labels do not match recorded positions!")
+}
 # throw_data %>% head()
 
 # thrower_ID is who is throwing
@@ -423,7 +448,9 @@ factorial_effects_interaction = lapply(c(thrower_list, "Overall (Blocked)"), fun
   td = tidy(m, conf.int = TRUE) %>%
     filter(term == "long_factorDisplaced (4.5cm):rot_factor90deg")
 
-  # WAITING ON REMAINING COMBINATION TREATMENT DATA (E.G. THROWER 4): POPULATE NA IF MISSING CELL
+  # Thrower 1 is missing combined-treatment measurements.
+  # Return NA when a participant has no estimable interaction.
+  
   if (nrow(td) == 0 || is.na(td$estimate[1])) {
     return(tibble(
       thrower             = th,
@@ -572,7 +599,15 @@ plot_interaction = interaction_plot_data %>%
 # display plots
 print(plot_dbars_ci)
 print(plot_interaction)
-ggsave("dbars.png", plot_dbars_ci)
+ggsave(
+  "dbars.png",
+  plot = plot_dbars_ci,
+  width = 10,
+  height = 6,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
 
 
 # ------------------------------------------------------------------------------
@@ -692,6 +727,12 @@ plot_regression_best_fit = pulse_rot %>%
     color = "Thrower"
   )
 
-# display plot
-print(plot_regression_best_fit)
-ggsave("regressionline.png", plot_regression_best_fit)
+ggsave(
+  "regressionline.png",
+  plot = plot_regression_best_fit,
+  width = 11,
+  height = 7,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
