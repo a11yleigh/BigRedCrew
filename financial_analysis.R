@@ -1,112 +1,55 @@
-# pulse_financial_analysis.R
-# Financial impact of improved PULSE sensor placement -- Big Red Crew
-# Structure follows Fraser's ZZ_financial_analysis.R:
-#   statistic f() -> bootstrap -> cost -> CI -> compare scenarios
-# Data: throwData_10_30.csv -- 3 pitchers x 5 placements x 10 throws = 150 throws
+# financial_analysis.R -- Big Red Crew
+# Matches the Financial Impacts section: placement correction factors with bootstrap 95% CIs,
+# applied to an MLB-level throw. Raw Nm from our low-effort throws are never used directly.
 
-library(dplyr)
-library(readr)
+library(dplyr); library(readr)
 set.seed(5300)
 
-# ---------------------------------------------------------------
-# 0. DATA
-data = read_csv("throwData_10.30.csv", show_col_types = FALSE) %>%
-  transmute(pitcher = factor(thrower_ID),
-            condition = sensor_placement,
-            arm_speed, torque = valgus_torque)
+# ---- 0. DATA: 3 pitchers x 5 placements x 10 throws = 150 throws ----
+data = read_csv("throwData_10_30.csv", show_col_types = FALSE) %>%
+  transmute(pitcher = factor(thrower_ID), placement = sensor_placement, arm_speed, torque = valgus_torque)
+places = c("ideal", "rot_90", "rot_180", "long_displaced", "long_and_rot90")
 
-# ---------------------------------------------------------------
-# 1. ASSUMPTIONS (cite or justify each one in the report)
-k           = 1.96          # failure band: +/- 1.96 residual SDs of ideal-placement throws
-sensor_cost = 245           # PULSE Throw price, USD (Driveline Baseball, n.d.)
-at_wage     = 60250 / 2080  # athletic trainer median wage, USD/hr (BLS, 2025)
-sessions    = 100           # tracked sessions per pitcher-season         [ASSUMPTION]
-min_session = 5             # AT minutes per session to don/sync/review   [ASSUMPTION]
-fix_min     = 1             # extra donning minutes per session for a fix [ASSUMPTION]
-fix_cost    = 10            # one-time cost of jig / alignment mark       [ASSUMPTION]
-staff       = 15            # pitchers on staff                           [ASSUMPTION]
-
-spend    = sensor_cost + sessions * (min_session / 60) * at_wage   # $ monitoring spend / pitcher-season
-cost_fix = fix_cost   + sessions * (fix_min / 60) * at_wage        # $ added by a fix / pitcher-season
-
-# ---------------------------------------------------------------
-# 2. SCENARIOS: how often each placement occurs in practice
-# BEFORE: uniform over the 5 tested placements (no field data on real donning error yet)
-conds = c("ideal", "rot_90", "rot_180", "long_displaced", "long_and_rot90")
-scen = list(
-  before       = c(ideal=1, rot_90=1, rot_180=1, long_displaced=1, long_and_rot90=1),
-  fix_rotation = c(ideal=1, rot_90=0, rot_180=0, long_displaced=1, long_and_rot90=0), # keyed sleeve / mark
-  fix_length   = c(ideal=1, rot_90=1, rot_180=1, long_displaced=0, long_and_rot90=0), # epicondyle jig
-  fix_both     = c(ideal=1, rot_90=0, rot_180=0, long_displaced=0, long_and_rot90=0)
-)
-scen = lapply(scen, function(w) w / sum(w))
-
-# ---------------------------------------------------------------
-# 3. STATISTIC
-# Torque rises with arm speed, and arm speed differed across conditions, so the
-# "true" reading for each throw is predicted from IDEAL-placement throws only:
-#   torque ~ pitcher + arm_speed   (pitcher-specific baseline, shared arm-speed slope)
-# A throw FAILS if its reading falls outside +/- k * residual SD of that ideal model.
-# By construction ~5% of ideal throws fail (the measurement noise floor).
-f = function(d, k){
-  m     = lm(torque ~ pitcher + arm_speed, data = filter(d, condition == "ideal"))
-  sigma = summary(m)$sigma
-  pc = d %>%
-    mutate(pred = predict(m, newdata = d),
-           fail = abs(torque - pred) > k * sigma) %>%
-    group_by(condition) %>%
-    summarize(p = mean(fail), .groups = "drop")
-  p = setNames(pc$p, pc$condition)[conds]
-  bind_cols(as_tibble(as.list(p)), as_tibble(lapply(scen, function(w) sum(w * p))))
+# ---- 1. STATISTIC: reading-to-true ratio for each placement ----
+# Step 1: from CORRECTLY placed throws only, model torque ~ pitcher + arm speed.
+#         This predicts what each throw SHOULD have read.
+# Step 2: ratio = actual reading / predicted true torque, averaged per placement.
+#         ratio 0.78 means the sensor reads 22% low. Correction factor = 1 / ratio.
+f = function(d){
+  m = lm(torque ~ pitcher + arm_speed, data = filter(d, placement == "ideal"))
+  d %>% mutate(ratio = torque / predict(m, newdata = d)) %>%
+    group_by(placement) %>% summarize(ratio = mean(ratio), .groups = "drop")
 }
-point = data %>% f(k = k)
-print(point, width = Inf)
 
-# ---------------------------------------------------------------
-# 4. BOOTSTRAP: resample throws within each pitcher x condition cell, refit everything
-B = 1000
-boot = bind_rows(lapply(1:B, function(i){
-  data %>% group_by(pitcher, condition) %>%
-    slice_sample(prop = 1, replace = TRUE) %>% ungroup() %>%
-    f(k = k) %>% mutate(rep = i)
-}))
+# ---- 2. BOOTSTRAP: 1,000 resamples ----
+# Within each pitcher x placement group (10 throws), redraw 10 throws WITH replacement,
+# then rerun step 1 (including refitting the model).
+boot = bind_rows(lapply(1:1000, function(i)
+  data %>% group_by(pitcher, placement) %>% slice_sample(prop = 1, replace = TRUE) %>%
+    ungroup() %>% f() %>% mutate(rep = i)))
 
-# ---------------------------------------------------------------
-# 5. COSTS & 95% CIs
-qi = function(x) tibble(estimate = median(x), se = sd(x),
-                        lower = quantile(x, 0.025), upper = quantile(x, 0.975))
-cond_rates = bind_rows(lapply(conds, function(c) qi(boot[[c]]) %>% mutate(condition = c))) %>%
-  select(condition, everything())
-print(cond_rates)
+# ---- 3. CORRECTION FACTORS with 95% CIs (middle 95% of the 1,000 results) ----
+factors = boot %>% mutate(cf = 1 / ratio) %>% group_by(placement) %>%
+  summarize(pct_error = median(ratio - 1),          # how far off the reading is
+            factor    = median(cf),                 # multiply the reading by this
+            lower     = quantile(cf, 0.025),
+            upper     = quantile(cf, 0.975),
+            .groups = "drop") %>%
+  mutate(needs_correction = !(lower <= 1 & upper >= 1)) %>%   # CI excludes 1 = real bias
+  arrange(match(placement, places))
+print(factors, width = Inf)
 
-results = bind_rows(lapply(names(scen), function(s){
-  p    = boot[[s]]
-  cost = p * spend + if (s == "before") 0 else cost_fix
-  save = boot$before * spend - cost
-  bind_rows(
-    qi(p)            %>% mutate(metric = "P(mis-measured throw)"),
-    qi(cost)         %>% mutate(metric = "Cost per pitcher-season ($)"),
-    qi(save)         %>% mutate(metric = "Net savings per pitcher-season ($)"),
-    qi(save * staff) %>% mutate(metric = "Net savings per staff-season ($)")
-  ) %>% mutate(scenario = s)
-})) %>% select(scenario, metric, everything())
-print(results, n = Inf, width = Inf)
+# ---- 4. MLB EXAMPLE: what a true 120 Nm throw would read at each placement ----
+# 120 Nm = top of the published 50-120 Nm range (Scientific Reports, 2023); >100 Nm hazardous (Slowik et al., 2019)
+true_t = 120; hazard = 100
+boot %>% mutate(reads = true_t * ratio) %>% group_by(placement) %>%
+  summarize(reads_as = median(reads), lower = quantile(reads, 0.025), upper = quantile(reads, 0.975),
+            looks_safe = median(reads) < hazard, .groups = "drop") %>%
+  arrange(match(placement, places)) %>% print()
 
-# Share of bootstrap replicates in which each fix beats doing nothing
-boot %>% summarize(across(c(fix_rotation, fix_length, fix_both),
-                          ~ mean((before - .x) * spend - cost_fix > 0)))
-
-# ---------------------------------------------------------------
-# 6. SENSITIVITY to the failure band
-bind_rows(lapply(c(1.645, 1.96, 2.576), function(kk)
-  data %>% f(k = kk) %>% select(before:fix_both) %>% mutate(k = kk)))
-
-# ---------------------------------------------------------------
-# 7. Mean bias by placement (arm-speed adjusted), for the Results section
-summary(lm(torque ~ pitcher + arm_speed + relevel(factor(condition), "ideal"), data = data))$coef
-
-# ---------------------------------------------------------------
-# 8. BREAK-EVEN vs UCL surgery cost (NOT a claimed saving)
-tibble(source = c("Meldau et al. 2020 (2004-14)", "2014-24 study: $1.26B / 276"),
-       cor = c(1.9e6, 1.26e9 / 276)) %>%
-  mutate(staff_seasons_per_surgery_to_break_even = cor / (cost_fix * staff))
+# ---- 5. INJURY COST CONTEXT (published values, scenario only) ----
+salary = 5.34e6              # avg MLB salary 2026 (Blum, 2026)
+surg_per_team = 276 / 10 / 30  # UCL surgeries per team-season, 2014-2024
+tibble(at_risk_per_team_season = surg_per_team * salary,
+       save_if_5pct_prevented  = 0.05 * surg_per_team * salary,
+       save_if_10pct_prevented = 0.10 * surg_per_team * salary)
