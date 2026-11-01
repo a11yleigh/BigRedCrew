@@ -556,8 +556,8 @@ plot_dbars_ci = plot_effects_data %>%
   ) +
   theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
   labs(
-    title = "Direct Treatment Effects (% Deviation) on Valgus Torque with 95% CI",
-    subtitle = "Percent deviation relative to ideal placement (dashed line = 0% baseline)",
+    title = "Percent Torque Deviation vs. Rotational Misplacement",
+    subtitle = "Descriptive linear trends by thrower | Black line = pooled trend",
     x = "Treatment Condition",
     y = "Valgus Torque Percent Deviation (%)",
     color = "Thrower"
