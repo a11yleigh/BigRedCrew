@@ -33,7 +33,22 @@ source("helper_functions.R")
 # ------------------------------------------------------------------------------
 
 # Import Experimental Data - data expected in CSV format
-raw_data = read_csv("throwData_10.31.csv", col_types = cols())
+raw_data = read_csv("full_throw_data.csv", col_types = cols())
+
+# Check the total number of throws.
+nrow(raw_data)
+
+# Count how many throws each player completed.
+raw_data %>%
+  count(thrower_ID)
+
+# Check that each player completed 10 throws per placement.
+raw_data %>%
+  count(thrower_ID, sensor_placement)
+
+# Check whether any values are missing.
+raw_data %>%
+  summarize(across(everything(), ~ sum(is.na(.x))))
 
 # Check that treatment labels match the recorded sensor positions
 placement_check = raw_data %>%
@@ -59,6 +74,10 @@ if (nrow(mismatches) > 0) {
   print(mismatches)
   stop("Sensor placement labels do not match recorded positions!")
 }
+
+# Check how many placement labels do not match the recorded positions.
+nrow(mismatches)
+
 # throw_data %>% head()
 
 # thrower_ID is who is throwing
@@ -216,9 +235,39 @@ print(plot_torque_hist)
 print(plot_torque_hist_ideal)
 print(plot_speed_hist)
 
-# ggsave("torque_histogram.png", plot_torque_hist)
-# ggsave("torque_histogram_ideal.png", plot_torque_hist_ideal)
-# ggsave("speed_histogram.png", plot_speed_hist)
+
+# Save updated figures using all six throwers (300 throws).
+
+# Figure 1 - Valgus torque for all throws
+ggsave(
+  "figure1_torque_all.png",
+  plot = plot_torque_hist,
+  width = 11,
+  height = 7,
+  dpi = 300,
+  bg = "white"
+)
+
+# Figure 2 - Valgus torque at ideal sensor placement
+ggsave(
+  "figure2_torque_ideal.png",
+  plot = plot_torque_hist_ideal,
+  width = 11,
+  height = 7,
+  dpi = 300,
+  bg = "white"
+)
+
+# Figure 3 - Arm speed for all throws
+ggsave(
+  "figure3_arm_speed.png",
+  plot = plot_speed_hist,
+  width = 11,
+  height = 7,
+  dpi = 300,
+  bg = "white"
+)
+
 
 
 # ------------------------------------------------------------------------------
@@ -246,6 +295,37 @@ avg_torque_summary = avg_torque_table %>%
 # display summary table
 print(avg_torque_summary)
 
+
+# ------------------------------------------------------------------------------
+# Absolute Percentage Change from Ideal Placement
+# ------------------------------------------------------------------------------
+
+# Compare each placement's mean torque with the ideal mean.
+# Absolute change shows magnitude, regardless of direction.
+
+absolute_pct_table = pulse_data %>%
+  filter(sensor_placement != "ideal") %>%
+  group_by(thrower, sensor_placement) %>%
+  summarize(
+    signed_pct_change = mean(pct_deviation),
+    absolute_pct_change = abs(signed_pct_change),
+    .groups = "drop"
+  )
+
+# Show both signed and absolute changes for each thrower.
+print(absolute_pct_table, n = Inf)
+
+# Average the absolute changes across the six throwers.
+absolute_pct_summary = absolute_pct_table %>%
+  group_by(sensor_placement) %>%
+  summarize(
+    mean_absolute_change = mean(absolute_pct_change),
+    min_absolute_change = min(absolute_pct_change),
+    max_absolute_change = max(absolute_pct_change),
+    .groups = "drop"
+  )
+
+print(absolute_pct_summary, width = Inf)
 
 # Table of percent deviation from ideal valgus torque
 
@@ -448,7 +528,6 @@ factorial_effects_interaction = lapply(c(thrower_list, "Overall (Blocked)"), fun
   td = tidy(m, conf.int = TRUE) %>%
     filter(term == "long_factorDisplaced (4.5cm):rot_factor90deg")
 
-  # Thrower 1 is missing combined-treatment measurements.
   # Return NA when a participant has no estimable interaction.
   
   if (nrow(td) == 0 || is.na(td$estimate[1])) {
@@ -512,7 +591,6 @@ plot_effects_data = bind_rows(
       se_pooled = se_factorial(valgus_torque ~ rot180_factor, data = sub_r180)
     )
     # combined (long + rot 90 vs ideal)
-    # WAITING ON REMAINING DATA FOR COMBINATION TREATMENT IF MISSING
     sub_comb = pulse_data %>% filter(thrower == th, sensor_placement %in% c("ideal", "long_and_rot90")) %>%
       mutate(comb_f = factor(sensor_placement, levels = c("ideal", "long_and_rot90")))
     res_comb = if (n_distinct(sub_comb$comb_f) == 2 && sum(sub_comb$comb_f == "long_and_rot90") > 0) {
@@ -736,3 +814,17 @@ ggsave(
   dpi = 300,
   bg = "white"
 )
+
+
+# Check the number of throws in our factorial analysis.
+nrow(factorial_data_2x2)
+nrow(rot180_data)
+
+# Check how many throws each regression model uses.
+nobs(m_long)
+nobs(m_rot)
+nobs(m_int)
+
+# Check that our confidence interval figure includes all six throwers.
+plot_effects_data %>%
+  count(thrower)
