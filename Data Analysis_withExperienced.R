@@ -300,6 +300,12 @@ print(avg_torque_summary)
 # Absolute Percentage Change from Ideal Placement
 # ------------------------------------------------------------------------------
 
+# calculate percent deviation for each throw relative to each thrower's ideal mean (add to main data frame)
+pulse_data = pulse_data %>%
+  left_join(ideal_means, by = "thrower") %>%  # add the ideal means as a column
+  mutate(pct_deviation = (valgus_torque - mean_torque_ideal) / mean_torque_ideal * 100)   # calculate % deviation
+
+
 # Compare each placement's mean torque with the ideal mean.
 # Absolute change shows magnitude, regardless of direction.
 
@@ -329,10 +335,6 @@ print(absolute_pct_summary, width = Inf)
 
 # Table of percent deviation from ideal valgus torque
 
-# calculate percent deviation for each throw relative to each thrower's ideal mean (add to main data frame)
-pulse_data = pulse_data %>%
-  left_join(ideal_means, by = "thrower") %>%  # add the ideal means as a column
-  mutate(pct_deviation = (valgus_torque - mean_torque_ideal) / mean_torque_ideal * 100)   # calculate % deviation
 
 # create summary table of average percent error at each sensor placement
 pct_dev_table = pulse_data %>%
@@ -796,7 +798,7 @@ plot_regression_best_fit = pulse_rot %>%
     se = FALSE,
     linewidth = 1.2
   ) +
-  scale_x_continuous(breaks = c(0, 90, 180), labels = c("0° (Ideal)", "90°", "180°")) +
+  scale_x_continuous(breaks = c(0, 90, 180), labels = c("0┬░ (Ideal)", "90┬░", "180┬░")) +
   labs(
     title = "Percent Torque Deviation vs. Rotational Misplacement",
     subtitle = "Descriptive linear trends by thrower | Black line = pooled trend",
@@ -1019,7 +1021,7 @@ plot_regression_best_fit = pulse_rot %>%
     se = FALSE,
     linewidth = 1.2
   ) +
-  scale_x_continuous(breaks = c(0, 90, 180), labels = c("0° (Ideal)", "90°", "180°")) +
+  scale_x_continuous(breaks = c(0, 90, 180), labels = c("0┬░ (Ideal)", "90┬░", "180┬░")) +
   scale_color_discrete(limits = c("Thrower 1", "Thrower 5", "Thrower 6")) +
   labs(
     title = "Percent Torque Deviation vs. Rotational Misplacement",
@@ -1030,3 +1032,74 @@ plot_regression_best_fit = pulse_rot %>%
   )
 
 plot_regression_best_fit
+
+
+# ------------------------------------------------------------------------------
+# Regression Models: Experienced Throwers Only (Throwers 1, 5, 6)
+# ------------------------------------------------------------------------------
+
+# Filter subsets for experienced throwers only
+pulse_long_exp = pulse_long %>%
+  filter(thrower %in% experienced_throwers) %>%
+  mutate(thrower = droplevels(factor(thrower)))
+
+pulse_rot_exp = pulse_rot %>%
+  filter(thrower %in% experienced_throwers) %>%
+  mutate(thrower = droplevels(factor(thrower)))
+
+pulse_2x2_exp = pulse_2x2 %>%
+  filter(thrower %in% experienced_throwers) %>%
+  mutate(thrower = droplevels(factor(thrower)))
+
+# Fit the 3 models for experienced throwers
+m_long_exp = lm(pct_deviation ~ longitudinal  + throw_ID, data = pulse_long_exp)
+m_rot_exp  = lm(pct_deviation ~ rotation  + throw_ID, data = pulse_rot_exp)
+m_int_exp  = lm(pct_deviation ~ longitudinal * rotation  + throw_ID, data = pulse_2x2_exp)
+
+# Experienced Models Performance Summary Table
+experienced_models_list = list(
+  "Model 1: Longitudinal (Experienced)" = m_long_exp,
+  "Model 2: Rotational (Experienced)"   = m_rot_exp,
+  "Model 3: Interaction (Experienced)"  = m_int_exp
+)
+
+experienced_models_summary = tibble(
+  model         = names(experienced_models_list),
+  formula       = c(
+    "pct_deviation ~ longitudinal + thrower + throw_ID",
+    "pct_deviation ~ rotation + thrower + throw_ID",
+    "pct_deviation ~ longitudinal * rotation + thrower + throw_ID"
+  ),
+  r_squared     = sapply(experienced_models_list, function(m) round(summary(m)$r.squared, 4)),
+  adj_r_squared = sapply(experienced_models_list, function(m) round(summary(m)$adj.r.squared, 4)),
+  residual_se   = sapply(experienced_models_list, function(m) round(summary(m)$sigma, 2)),
+  f_statistic   = sapply(experienced_models_list, function(m) round(summary(m)$fstatistic[1], 2)),
+  p_value       = sapply(experienced_models_list, function(m) {
+    f = summary(m)$fstatistic
+    round(pf(f[1], f[2], f[3], lower.tail = FALSE), 4)
+  })
+)
+
+# Experienced Models Detailed Coefficients Table
+experienced_coefs_summary = bind_rows(
+  lapply(names(experienced_models_list), function(m_name) {
+    m = experienced_models_list[[m_name]]
+    tidy(m, conf.int = TRUE) %>%
+      mutate(
+        model       = m_name,
+        estimate    = round(estimate, 2),
+        std_error   = round(std.error, 2),
+        t_statistic = round(statistic, 2),
+        p_value     = round(p.value, 4),
+        "95% CI"    = paste0("[", round(conf.low, 2), ", ", round(conf.high, 2), "]")
+      ) %>%
+      select(model, term, estimate, std_error, t_statistic, p_value, "95% CI")
+  })
+)
+
+# Display summary tables for experienced throwers
+cat("\n--- Experienced Throwers Regression Model Performance Summary (Percent Deviation) ---\n")
+print(experienced_models_summary, width = Inf)
+
+cat("\n--- Experienced Throwers Regression Coefficients Summary ---\n")
+print(experienced_coefs_summary, n = Inf, width = Inf)
