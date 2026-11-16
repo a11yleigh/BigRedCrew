@@ -719,22 +719,22 @@ pulse_2x2 = pulse_data %>%
     rotation     = factor(rotational_dev, levels = c(0, 90))
   )
 
-# fit regression models blocking/controlling for thrower and throw order (throw_ID)
-m_long = lm(pct_deviation ~ longitudinal + thrower + throw_ID, data = pulse_long)
-m_rot  = lm(pct_deviation ~ rotation + thrower + throw_ID, data = pulse_rot)
-m_int  = lm(pct_deviation ~ longitudinal * rotation + thrower + throw_ID, data = pulse_2x2)
+# fit regression models controlling for throw order (throw_ID) without blocking for thrower
+m_long = lm(pct_deviation ~ longitudinal + throw_ID, data = pulse_long)
+m_rot  = lm(pct_deviation ~ rotation + throw_ID, data = pulse_rot)
+m_int  = lm(pct_deviation ~ longitudinal * rotation + throw_ID, data = pulse_2x2)
 
 # Model Performance Comparison Table
 models_list = list(
-  "Model 1: Longitudinal (Blocked)" = m_long,
-  "Model 2: Rotational (Blocked)"   = m_rot,
-  "Model 3: Interaction (Blocked)"  = m_int
+  "Model 1: Longitudinal" = m_long,
+  "Model 2: Rotational"   = m_rot,
+  "Model 3: Interaction"  = m_int
 )
 
 formula_labels = c(
-  "pct_deviation ~ longitudinal + thrower + throw_ID",
-  "pct_deviation ~ rotation + thrower + throw_ID",
-  "pct_deviation ~ longitudinal * rotation + thrower + throw_ID"
+  "pct_deviation ~ longitudinal + throw_ID",
+  "pct_deviation ~ rotation + throw_ID",
+  "pct_deviation ~ longitudinal * rotation + throw_ID"
 )
 
 regression_models_summary = tibble(
@@ -771,38 +771,37 @@ regression_coefs_summary = bind_rows(
 print(regression_models_summary, width = Inf)
 print(regression_coefs_summary, n = Inf, width = Inf)
 
-# Scatter plot with lines of best fit for the highest R^2 model (Model 2: Rotational)
-plot_regression_best_fit = pulse_rot %>%
+# Scatter plot with interaction lines of best fit for the highest R^2 model (Model 3: Interaction)
+plot_regression_best_fit = pulse_2x2 %>%
+  mutate(
+    longitudinal_label = factor(
+      if_else(longitudinal_dev == 0, "Ideal (0 cm)", "Displaced (4.5 cm)"),
+      levels = c("Ideal (0 cm)", "Displaced (4.5 cm)")
+    )
+  ) %>%
   ggplot() +
   geom_hline(yintercept = 0, linetype = "dashed", color = "darkgrey", linewidth = 0.8) +
   geom_jitter(
-    mapping = aes(x = rotational_dev, y = pct_deviation, color = thrower),
-    width = 3,
+    mapping = aes(x = rotational_dev, y = pct_deviation, color = longitudinal_label),
+    width = 2.5,
     size = 2.5,
     alpha = 0.7
   ) +
   geom_smooth(
-    mapping = aes(x = rotational_dev, y = pct_deviation, color = thrower),
+    mapping = aes(x = rotational_dev, y = pct_deviation, color = longitudinal_label, linetype = longitudinal_label),
     method = "lm",
     se = TRUE,
-    linewidth = 1,
-    alpha = 0.15
+    linewidth = 1.2,
+    alpha = 0.2
   ) +
-  geom_smooth(
-    mapping = aes(x = rotational_dev, y = pct_deviation),
-    method = "lm",
-    color = "black",
-    linetype = "solid",
-    se = FALSE,
-    linewidth = 1.2
-  ) +
-  scale_x_continuous(breaks = c(0, 90, 180), labels = c("0° (Ideal)", "90°", "180°")) +
+  scale_x_continuous(breaks = c(0, 90), labels = c("0 deg (Ideal)", "90 deg")) +
   labs(
-    title = "Percent Torque Deviation vs. Rotational Misplacement",
-    subtitle = "Descriptive linear trends by thrower | Black line = pooled trend",
+    title = "Percent Torque Deviation: Longitudinal x Rotational Interaction Fit",
+    subtitle = "All throwers (Model 3) | Non-parallel lines illustrate the interaction between misplacements",
     x = "Rotational Misplacement (Degrees)",
     y = "Valgus Torque Percent Deviation from Ideal (%)",
-    color = "Thrower"
+    color = "Longitudinal Placement",
+    linetype = "Longitudinal Placement"
   )
 
 ggsave(
@@ -828,3 +827,4 @@ nobs(m_int)
 # Check that our confidence interval figure includes all six throwers.
 plot_effects_data %>%
   count(thrower)
+

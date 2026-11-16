@@ -93,8 +93,8 @@ nrow(mismatches)
 
 # Experimental Design Notes:
 #   In this preliminary single-thrower test, treatments were conducted in sequential sets of 10 throws.
-#   For the multi-thrower study, each Thrower will act as a BLOCK, with the 5 treatment sets 
-#   randomized in order (5! = 120 possible permutations) to prevent fatigue confounding.
+#   For the multi-thrower study, each thrower's throws will be randomized in order 
+#   (5! = 120 possible permutations) to prevent fatigue confounding.
 
 
 # ------------------------------------------------------------------------------
@@ -333,8 +333,8 @@ absolute_pct_summary = absolute_pct_table %>%
 
 print(absolute_pct_summary, width = Inf)
 
-# Table of percent deviation from ideal valgus torque
 
+# Table of percent deviation from ideal valgus torque
 
 # create summary table of average percent error at each sensor placement
 pct_dev_table = pulse_data %>%
@@ -691,7 +691,7 @@ ggsave(
 
 
 # ------------------------------------------------------------------------------
-# Regression Analysis: Percent Deviation Models (Blocked by Thrower & Throw Order)
+# Regression Analysis: Percent Deviation Models (Blocked by Throw Order)
 # ------------------------------------------------------------------------------
 
 # ensure throw_ID is present in pulse_data (e.g. if running this block in an active R session)
@@ -721,22 +721,22 @@ pulse_2x2 = pulse_data %>%
     rotation     = factor(rotational_dev, levels = c(0, 90))
   )
 
-# fit regression models blocking/controlling for thrower and throw order (throw_ID)
-m_long = lm(pct_deviation ~ longitudinal + thrower + throw_ID, data = pulse_long)
-m_rot  = lm(pct_deviation ~ rotation + thrower + throw_ID, data = pulse_rot)
-m_int  = lm(pct_deviation ~ longitudinal * rotation + thrower + throw_ID, data = pulse_2x2)
+# fit regression models controlling for throw order (throw_ID) without blocking for thrower
+m_long = lm(pct_deviation ~ longitudinal + throw_ID, data = pulse_long)
+m_rot  = lm(pct_deviation ~ rotation + throw_ID, data = pulse_rot)
+m_int  = lm(pct_deviation ~ longitudinal * rotation + throw_ID, data = pulse_2x2)
 
 # Model Performance Comparison Table
 models_list = list(
-  "Model 1: Longitudinal (Blocked)" = m_long,
-  "Model 2: Rotational (Blocked)"   = m_rot,
-  "Model 3: Interaction (Blocked)"  = m_int
+  "Model 1: Longitudinal" = m_long,
+  "Model 2: Rotational"   = m_rot,
+  "Model 3: Interaction"  = m_int
 )
 
 formula_labels = c(
-  "pct_deviation ~ longitudinal + thrower + throw_ID",
-  "pct_deviation ~ rotation + thrower + throw_ID",
-  "pct_deviation ~ longitudinal * rotation + thrower + throw_ID"
+  "pct_deviation ~ longitudinal + throw_ID",
+  "pct_deviation ~ rotation + throw_ID",
+  "pct_deviation ~ longitudinal * rotation + throw_ID"
 )
 
 regression_models_summary = tibble(
@@ -773,38 +773,37 @@ regression_coefs_summary = bind_rows(
 print(regression_models_summary, width = Inf)
 print(regression_coefs_summary, n = Inf, width = Inf)
 
-# Scatter plot with lines of best fit for the highest R^2 model (Model 2: Rotational)
-plot_regression_best_fit = pulse_rot %>%
+# Scatter plot with interaction lines of best fit for the highest R^2 model (Model 3: Interaction)
+plot_regression_best_fit = pulse_2x2 %>%
+  mutate(
+    longitudinal_label = factor(
+      if_else(longitudinal_dev == 0, "Ideal (0 cm)", "Displaced (4.5 cm)"),
+      levels = c("Ideal (0 cm)", "Displaced (4.5 cm)")
+    )
+  ) %>%
   ggplot() +
   geom_hline(yintercept = 0, linetype = "dashed", color = "darkgrey", linewidth = 0.8) +
   geom_jitter(
-    mapping = aes(x = rotational_dev, y = pct_deviation, color = thrower),
-    width = 3,
+    mapping = aes(x = rotational_dev, y = pct_deviation, color = longitudinal_label),
+    width = 2.5,
     size = 2.5,
     alpha = 0.7
   ) +
   geom_smooth(
-    mapping = aes(x = rotational_dev, y = pct_deviation, color = thrower),
+    mapping = aes(x = rotational_dev, y = pct_deviation, color = longitudinal_label, linetype = longitudinal_label),
     method = "lm",
     se = TRUE,
-    linewidth = 1,
-    alpha = 0.15
+    linewidth = 1.2,
+    alpha = 0.2
   ) +
-  geom_smooth(
-    mapping = aes(x = rotational_dev, y = pct_deviation),
-    method = "lm",
-    color = "black",
-    linetype = "solid",
-    se = FALSE,
-    linewidth = 1.2
-  ) +
-  scale_x_continuous(breaks = c(0, 90, 180), labels = c("0┬░ (Ideal)", "90┬░", "180┬░")) +
+  scale_x_continuous(breaks = c(0, 90), labels = c("0 deg (Ideal)", "90 deg")) +
   labs(
-    title = "Percent Torque Deviation vs. Rotational Misplacement",
-    subtitle = "Descriptive linear trends by thrower | Black line = pooled trend",
+    title = "Percent Torque Deviation: Longitudinal x Rotational Interaction Fit",
+    subtitle = "All Throwers",
     x = "Rotational Misplacement (Degrees)",
     y = "Valgus Torque Percent Deviation from Ideal (%)",
-    color = "Thrower"
+    color = "Longitudinal Placement",
+    linetype = "Longitudinal Placement"
   )
 
 ggsave(
@@ -832,206 +831,139 @@ plot_effects_data %>%
   count(thrower)
 
 
-# Experienced Throwers Isolated
-experienced_data <- pulse_data %>%
-  filter(thrower %in% c("Thrower 1", "Thrower 5", "Thrower 6"))
+# ==============================================================================
+# Experienced Throwers Isolated (Throwers 1, 5, 6)
+# ==============================================================================
 
-experienced_throwers <- c("Thrower 1", "Thrower 5", "Thrower 6")
+# Define experienced throwers and subset data
+experienced_throwers = c("Thrower 1", "Thrower 5", "Thrower 6")
 
-experienced_data
+experienced_data = pulse_data %>%
+  filter(thrower %in% experienced_throwers) %>%
+  mutate(thrower = droplevels(factor(thrower)))
 
-summary(experienced_data)
 
-# Identify experienced throwers
-experienced_throwers <- unique(as.character(experienced_data$thrower))
+# Table 1: Experienced Throwers Average Valgus Torque and Percent Error Summary
 
-# Plot dbars with 95% confidence intervals for each treatment
-# across experienced throwers (in percent deviation)
-
-plot_effects_data <- bind_rows(
-  lapply(experienced_throwers, function(th) {
-
-    mean_ideal <- mean(
-      experienced_data %>%
-        filter(thrower == th, sensor_placement == "ideal") %>%
-        pull(valgus_torque),
-      na.rm = TRUE
-    )
-
-    # Longitudinal
-    sub_l <- factorial_data_2x2 %>%
-      filter(thrower == th, rot_factor == "0deg")
-
-    res_l <- calc_direct_effects_table(
-      tibble(
-        factor = "Longitudinal (+4.5 cm)",
-        dbar = dbar_oneway(valgus_torque ~ long_factor, data = sub_l)
-      ),
-      se_pooled = se_factorial(valgus_torque ~ long_factor, data = sub_l)
-    )
-
-    # Rotational 90 degrees
-    sub_r90 <- factorial_data_2x2 %>%
-      filter(thrower == th, long_factor == "Ideal (0cm)")
-
-    res_r90 <- calc_direct_effects_table(
-      tibble(
-        factor = "Rotational (90 deg)",
-        dbar = dbar_oneway(valgus_torque ~ rot_factor, data = sub_r90)
-      ),
-      se_pooled = se_factorial(valgus_torque ~ rot_factor, data = sub_r90)
-    )
-
-    # Rotational 180 degrees
-    sub_r180 <- rot180_data %>%
-      filter(thrower == th)
-
-    res_r180 <- calc_direct_effects_table(
-      tibble(
-        factor = "Rotational (180 deg)",
-        dbar = dbar_oneway(valgus_torque ~ rot180_factor, data = sub_r180)
-      ),
-      se_pooled = se_factorial(valgus_torque ~ rot180_factor, data = sub_r180)
-    )
-
-    # Combined (longitudinal + rotational 90 vs ideal)
-    sub_comb <- experienced_data %>%
-      filter(
-        thrower == th,
-        sensor_placement %in% c("ideal", "long_and_rot90")
-      ) %>%
-      mutate(
-        comb_f = factor(
-          sensor_placement,
-          levels = c("ideal", "long_and_rot90")
-        )
-      )
-
-    res_comb <- if (
-      n_distinct(sub_comb$comb_f) == 2 &&
-      sum(sub_comb$comb_f == "long_and_rot90") > 0
-    ) {
-      calc_direct_effects_table(
-        tibble(
-          factor = "Combined (Long + Rot 90)",
-          dbar = dbar_oneway(valgus_torque ~ comb_f, data = sub_comb)
-        ),
-        se_pooled = se_factorial(valgus_torque ~ comb_f, data = sub_comb)
-      )
-    } else {
-      tibble(
-        factor = "Combined (Long + Rot 90)",
-        dbar = NA_real_,
-        se = NA_real_,
-        lower_95 = NA_real_,
-        upper_95 = NA_real_,
-        label = NA_character_
-      )
-    }
-
-    bind_rows(res_l, res_r90, res_r180, res_comb) %>%
-      mutate(
-        thrower = th,
-        dbar_pct = (dbar / mean_ideal) * 100,
-        lower_pct = (lower_95 / mean_ideal) * 100,
-        upper_pct = (upper_95 / mean_ideal) * 100
-      )
-
-  })
-) %>%
-  mutate(
-    treatment_name = factor(
-      factor,
-      levels = c(
-        "Longitudinal (+4.5 cm)",
-        "Rotational (90 deg)",
-        "Rotational (180 deg)",
-        "Combined (Long + Rot 90)"
-      )
-    ),
-    thrower = droplevels(factor(thrower))
+# Summary across sensor placements for experienced throwers (one consolidated table)
+experienced_summary_table = experienced_data %>%
+  group_by(sensor_placement) %>%
+  summarize(
+    "Mean Valgus Torque (N*m)" = round(mean(valgus_torque), 2),
+    "Mean Percent Error (%)"   = round(mean(pct_deviation), 2),
+    .groups = "drop"
   )
 
-# Create plot for experienced throwers only
-plot_dbars_ci_experienced <- plot_effects_data %>%
-  ggplot() +
-  geom_hline(
-    yintercept = 0,
-    linetype = "dashed",
-    color = "darkgrey",
-    linewidth = 0.8
-  ) +
-  geom_errorbar(
-    mapping = aes(
-      x = treatment_name,
-      ymin = lower_pct,
-      ymax = upper_pct,
-      color = thrower
-    ),
-    position = position_dodge(width = 0.6),
-    width = 0.2,
-    linewidth = 0.8
-  ) +
-  geom_point(
-    mapping = aes(
-      x = treatment_name,
-      y = dbar_pct,
-      color = thrower
-    ),
-    position = position_dodge(width = 0.6),
-    size = 3
-  ) +
-  scale_color_discrete(drop = TRUE) +
-  theme(
-    axis.text.x = element_text(angle = 30, hjust = 1)
-  ) +
-  labs(
-    title = "Direct Treatment Effects (% Deviation) on Valgus Torque with 95% CI",
-    subtitle = "Experienced Throwers Only | Percent deviation relative to ideal placement (dashed line = 0% baseline)",
-    x = "Treatment Condition",
-    y = "Valgus Torque Percent Deviation (%)",
-    color = "Thrower"
-  )
-plot_dbars_ci_experienced
+# Detailed breakdown by thrower with summary average row (mirroring earlier tables)
+experienced_torque_summary = experienced_data %>%
+  group_by(thrower, sensor_placement) %>%
+  summarize(mean_torque = mean(valgus_torque), .groups = "drop") %>%
+  pivot_wider(names_from = sensor_placement, values_from = mean_torque) %>%
+  bind_rows(summarize(., thrower = "Average (Experienced)", across(where(is.numeric), ~ mean(.x, na.rm = TRUE)))) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
 
-# Scatter plot with lines of best fit for the highest R^2 model (Model 2: Rotational) for just experienced pitchers
-plot_regression_best_fit = pulse_rot %>%
-  filter(thrower %in% c("Thrower 1", "Thrower 5", "Thrower 6")) %>%
-  mutate(thrower = droplevels(factor(thrower))) %>%
-  ggplot() +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgrey", linewidth = 0.8) +
-  geom_jitter(
-    mapping = aes(x = rotational_dev, y = pct_deviation, color = thrower),
-    width = 3,
-    size = 2.5,
-    alpha = 0.7
-  ) +
-  geom_smooth(
-    mapping = aes(x = rotational_dev, y = pct_deviation, color = thrower),
-    method = "lm",
-    se = TRUE,
-    linewidth = 1,
-    alpha = 0.15
-  ) +
-  geom_smooth(
-    mapping = aes(x = rotational_dev, y = pct_deviation),
-    method = "lm",
-    color = "black",
-    linetype = "solid",
-    se = FALSE,
-    linewidth = 1.2
-  ) +
-  scale_x_continuous(breaks = c(0, 90, 180), labels = c("0┬░ (Ideal)", "90┬░", "180┬░")) +
-  scale_color_discrete(limits = c("Thrower 1", "Thrower 5", "Thrower 6")) +
-  labs(
-    title = "Percent Torque Deviation vs. Rotational Misplacement",
-    subtitle = "Descriptive linear trends by thrower | Black line = pooled trend",
-    x = "Rotational Misplacement (Degrees)",
-    y = "Valgus Torque Percent Deviation from Ideal (%)",
-    color = "Thrower"
-  )
+experienced_pct_summary = experienced_data %>%
+  filter(sensor_placement != "ideal") %>%
+  group_by(thrower, sensor_placement) %>%
+  summarize(mean_pct = mean(pct_deviation), .groups = "drop") %>%
+  pivot_wider(names_from = sensor_placement, values_from = mean_pct) %>%
+  bind_rows(summarize(., thrower = "Average (Experienced)", across(where(is.numeric), ~ mean(.x, na.rm = TRUE)))) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
 
-plot_regression_best_fit
+cat("\n--- Experienced Throwers Average Torque and Percent Error Summary ---\n")
+print(experienced_summary_table)
+
+cat("\n--- Experienced Throwers Valgus Torque Breakdown (N*m) ---\n")
+print(experienced_torque_summary)
+
+cat("\n--- Experienced Throwers Percent Error Breakdown (%) ---\n")
+print(experienced_pct_summary)
+
+
+# Table 2: Experienced Throwers Factorial Effects Summary Table
+
+# calculate baseline mean at ideal placement for experienced throwers
+mean_ideal_exp = mean(experienced_data %>% filter(sensor_placement == "ideal") %>% pull(valgus_torque))
+
+# 1. Longitudinal direct effect (+4.5 cm)
+sub_long_exp = factorial_data_2x2 %>%
+  filter(thrower %in% experienced_throwers, rot_factor == "0deg")
+d_long_exp   = dbar_oneway(valgus_torque ~ long_factor, data = sub_long_exp)
+se_long_exp  = se_factorial(valgus_torque ~ long_factor, data = sub_long_exp)
+low_long_exp = d_long_exp - 1.96 * se_long_exp
+upp_long_exp = d_long_exp + 1.96 * se_long_exp
+d_long_exp_pct   = (d_long_exp / mean_ideal_exp) * 100
+se_long_exp_pct  = (se_long_exp / mean_ideal_exp) * 100
+low_long_exp_pct = d_long_exp_pct - 1.96 * se_long_exp_pct
+upp_long_exp_pct = d_long_exp_pct + 1.96 * se_long_exp_pct
+
+# 2. Rotational 90 degrees direct effect
+sub_rot90_exp = factorial_data_2x2 %>%
+  filter(thrower %in% experienced_throwers, long_factor == "Ideal (0cm)")
+d_rot90_exp   = dbar_oneway(valgus_torque ~ rot_factor, data = sub_rot90_exp)
+se_rot90_exp  = se_factorial(valgus_torque ~ rot_factor, data = sub_rot90_exp)
+low_rot90_exp = d_rot90_exp - 1.96 * se_rot90_exp
+upp_rot90_exp = d_rot90_exp + 1.96 * se_rot90_exp
+d_rot90_exp_pct   = (d_rot90_exp / mean_ideal_exp) * 100
+se_rot90_exp_pct  = (se_rot90_exp / mean_ideal_exp) * 100
+low_rot90_exp_pct = d_rot90_exp_pct - 1.96 * se_rot90_exp_pct
+upp_rot90_exp_pct = d_rot90_exp_pct + 1.96 * se_rot90_exp_pct
+
+# 3. Rotational 180 degrees direct effect
+sub_rot180_exp = rot180_data %>%
+  filter(thrower %in% experienced_throwers)
+d_rot180_exp   = dbar_oneway(valgus_torque ~ rot180_factor, data = sub_rot180_exp)
+se_rot180_exp  = se_factorial(valgus_torque ~ rot180_factor, data = sub_rot180_exp)
+low_rot180_exp = d_rot180_exp - 1.96 * se_rot180_exp
+upp_rot180_exp = d_rot180_exp + 1.96 * se_rot180_exp
+d_rot180_exp_pct   = (d_rot180_exp / mean_ideal_exp) * 100
+se_rot180_exp_pct  = (se_rot180_exp / mean_ideal_exp) * 100
+low_rot180_exp_pct = d_rot180_exp_pct - 1.96 * se_rot180_exp_pct
+upp_rot180_exp_pct = d_rot180_exp_pct + 1.96 * se_rot180_exp_pct
+
+# 4. Interaction effect (Longitudinal x Rotational 90)
+sub_2x2_exp = factorial_data_2x2 %>%
+  filter(thrower %in% experienced_throwers)
+m_int_exp_effect = lm(valgus_torque ~ long_factor * rot_factor, data = sub_2x2_exp)
+td_int_exp = tidy(m_int_exp_effect, conf.int = TRUE) %>%
+  filter(term == "long_factorDisplaced (4.5cm):rot_factor90deg")
+d_int_exp   = td_int_exp$estimate[1]
+se_int_exp  = td_int_exp$std.error[1]
+low_int_exp = td_int_exp$conf.low[1]
+upp_int_exp = td_int_exp$conf.high[1]
+d_int_exp_pct   = (d_int_exp / mean_ideal_exp) * 100
+se_int_exp_pct  = (se_int_exp / mean_ideal_exp) * 100
+low_int_exp_pct = (low_int_exp / mean_ideal_exp) * 100
+upp_int_exp_pct = (upp_int_exp / mean_ideal_exp) * 100
+
+# package into factorial effects summary table (mirroring earlier tables, no p-val column)
+experienced_factorial_effects = tibble(
+  effect         = c(
+    "Longitudinal (+4.5 cm)",
+    "Rotational (90 deg)",
+    "Rotational (180 deg)",
+    "Interaction (Long x Rot 90)"
+  ),
+  "dbar (N*m)"   = round(c(d_long_exp, d_rot90_exp, d_rot180_exp, d_int_exp), 2),
+  "se (N*m)"     = round(c(se_long_exp, se_rot90_exp, se_rot180_exp, se_int_exp), 2),
+  "95% CI (N*m)" = c(
+    paste0("[", round(low_long_exp, 2), ", ", round(upp_long_exp, 2), "]"),
+    paste0("[", round(low_rot90_exp, 2), ", ", round(upp_rot90_exp, 2), "]"),
+    paste0("[", round(low_rot180_exp, 2), ", ", round(upp_rot180_exp, 2), "]"),
+    paste0("[", round(low_int_exp, 2), ", ", round(upp_int_exp, 2), "]")
+  ),
+  "dbar (%)"     = round(c(d_long_exp_pct, d_rot90_exp_pct, d_rot180_exp_pct, d_int_exp_pct), 2),
+  "se (%)"       = round(c(se_long_exp_pct, se_rot90_exp_pct, se_rot180_exp_pct, se_int_exp_pct), 2),
+  "95% CI (%)"   = c(
+    paste0("[", round(low_long_exp_pct, 2), "%, ", round(upp_long_exp_pct, 2), "%]"),
+    paste0("[", round(low_rot90_exp_pct, 2), "%, ", round(upp_rot90_exp_pct, 2), "%]"),
+    paste0("[", round(low_rot180_exp_pct, 2), "%, ", round(upp_rot180_exp_pct, 2), "%]"),
+    paste0("[", round(low_int_exp_pct, 2), "%, ", round(upp_int_exp_pct, 2), "%]")
+  )
+)
+
+cat("\n--- Experienced Throwers Factorial Effects Summary Table ---\n")
+print(experienced_factorial_effects, width = Inf)
 
 
 # ------------------------------------------------------------------------------
@@ -1051,10 +983,10 @@ pulse_2x2_exp = pulse_2x2 %>%
   filter(thrower %in% experienced_throwers) %>%
   mutate(thrower = droplevels(factor(thrower)))
 
-# Fit the 3 models for experienced throwers
-m_long_exp = lm(pct_deviation ~ longitudinal  + throw_ID, data = pulse_long_exp)
-m_rot_exp  = lm(pct_deviation ~ rotation  + throw_ID, data = pulse_rot_exp)
-m_int_exp  = lm(pct_deviation ~ longitudinal * rotation  + throw_ID, data = pulse_2x2_exp)
+# Fit the 3 regression models controlling for throw order (throw_ID) without blocking for thrower
+m_long_exp = lm(pct_deviation ~ longitudinal + throw_ID, data = pulse_long_exp)
+m_rot_exp  = lm(pct_deviation ~ rotation + throw_ID, data = pulse_rot_exp)
+m_int_exp  = lm(pct_deviation ~ longitudinal * rotation + throw_ID, data = pulse_2x2_exp)
 
 # Experienced Models Performance Summary Table
 experienced_models_list = list(
@@ -1063,13 +995,15 @@ experienced_models_list = list(
   "Model 3: Interaction (Experienced)"  = m_int_exp
 )
 
+experienced_formula_labels = c(
+  "pct_deviation ~ longitudinal + throw_ID",
+  "pct_deviation ~ rotation + throw_ID",
+  "pct_deviation ~ longitudinal * rotation + throw_ID"
+)
+
 experienced_models_summary = tibble(
   model         = names(experienced_models_list),
-  formula       = c(
-    "pct_deviation ~ longitudinal + thrower + throw_ID",
-    "pct_deviation ~ rotation + thrower + throw_ID",
-    "pct_deviation ~ longitudinal * rotation + thrower + throw_ID"
-  ),
+  formula       = experienced_formula_labels,
   r_squared     = sapply(experienced_models_list, function(m) round(summary(m)$r.squared, 4)),
   adj_r_squared = sapply(experienced_models_list, function(m) round(summary(m)$adj.r.squared, 4)),
   residual_se   = sapply(experienced_models_list, function(m) round(summary(m)$sigma, 2)),
@@ -1097,9 +1031,204 @@ experienced_coefs_summary = bind_rows(
   })
 )
 
-# Display summary tables for experienced throwers
 cat("\n--- Experienced Throwers Regression Model Performance Summary (Percent Deviation) ---\n")
 print(experienced_models_summary, width = Inf)
 
 cat("\n--- Experienced Throwers Regression Coefficients Summary ---\n")
 print(experienced_coefs_summary, n = Inf, width = Inf)
+
+
+# ------------------------------------------------------------------------------
+# Plots for Experienced Throwers (Moved to End of Regression Models)
+# ------------------------------------------------------------------------------
+
+# 1. Plot dbars with 95% confidence intervals for each treatment across experienced throwers
+plot_effects_data_exp = bind_rows(
+  lapply(experienced_throwers, function(th) {
+
+    mean_ideal = mean(
+      experienced_data %>%
+        filter(thrower == th, sensor_placement == "ideal") %>%
+        pull(valgus_torque),
+      na.rm = TRUE
+    )
+
+    # Longitudinal
+    sub_l = factorial_data_2x2 %>%
+      filter(thrower == th, rot_factor == "0deg")
+
+    res_l = calc_direct_effects_table(
+      tibble(
+        factor = "Longitudinal (+4.5 cm)",
+        dbar = dbar_oneway(valgus_torque ~ long_factor, data = sub_l)
+      ),
+      se_pooled = se_factorial(valgus_torque ~ long_factor, data = sub_l)
+    )
+
+    # Rotational 90 degrees
+    sub_r90 = factorial_data_2x2 %>%
+      filter(thrower == th, long_factor == "Ideal (0cm)")
+
+    res_r90 = calc_direct_effects_table(
+      tibble(
+        factor = "Rotational (90 deg)",
+        dbar = dbar_oneway(valgus_torque ~ rot_factor, data = sub_r90)
+      ),
+      se_pooled = se_factorial(valgus_torque ~ rot_factor, data = sub_r90)
+    )
+
+    # Rotational 180 degrees
+    sub_r180 = rot180_data %>%
+      filter(thrower == th)
+
+    res_r180 = calc_direct_effects_table(
+      tibble(
+        factor = "Rotational (180 deg)",
+        dbar = dbar_oneway(valgus_torque ~ rot180_factor, data = sub_r180)
+      ),
+      se_pooled = se_factorial(valgus_torque ~ rot180_factor, data = sub_r180)
+    )
+
+    # Combined (longitudinal + rotational 90 vs ideal)
+    sub_comb = experienced_data %>%
+      filter(
+        thrower == th,
+        sensor_placement %in% c("ideal", "long_and_rot90")
+      ) %>%
+      mutate(
+        comb_f = factor(
+          sensor_placement,
+          levels = c("ideal", "long_and_rot90")
+        )
+      )
+
+    res_comb = if (
+      n_distinct(sub_comb$comb_f) == 2 &&
+      sum(sub_comb$comb_f == "long_and_rot90") > 0
+    ) {
+      calc_direct_effects_table(
+        tibble(
+          factor = "Combined (Long + Rot 90)",
+          dbar = dbar_oneway(valgus_torque ~ comb_f, data = sub_comb)
+        ),
+        se_pooled = se_factorial(valgus_torque ~ comb_f, data = sub_comb)
+      )
+    } else {
+      tibble(
+        factor   = "Combined (Long + Rot 90)",
+        dbar     = NA_real_,
+        se       = NA_real_,
+        lower_95 = NA_real_,
+        upper_95 = NA_real_,
+        label    = NA_character_
+      )
+    }
+
+    bind_rows(res_l, res_r90, res_r180, res_comb) %>%
+      mutate(
+        thrower   = th,
+        dbar_pct  = (dbar / mean_ideal) * 100,
+        lower_pct = (lower_95 / mean_ideal) * 100,
+        upper_pct = (upper_95 / mean_ideal) * 100
+      )
+  })
+) %>%
+  mutate(
+    treatment_name = factor(
+      factor,
+      levels = c(
+        "Longitudinal (+4.5 cm)",
+        "Rotational (90 deg)",
+        "Rotational (180 deg)",
+        "Combined (Long + Rot 90)"
+      )
+    ),
+    thrower = droplevels(factor(thrower))
+  )
+
+plot_dbars_ci_experienced = plot_effects_data_exp %>%
+  ggplot() +
+  geom_hline(
+    yintercept = 0,
+    linetype   = "dashed",
+    color      = "darkgrey",
+    linewidth  = 0.8
+  ) +
+  geom_errorbar(
+    mapping = aes(
+      x     = treatment_name,
+      ymin  = lower_pct,
+      ymax  = upper_pct,
+      color = thrower
+    ),
+    position = position_dodge(width = 0.6),
+    width    = 0.2,
+    linewidth = 0.8
+  ) +
+  geom_point(
+    mapping = aes(
+      x     = treatment_name,
+      y     = dbar_pct,
+      color = thrower
+    ),
+    position = position_dodge(width = 0.6),
+    size     = 3
+  ) +
+  scale_color_discrete(drop = TRUE) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  ) +
+  labs(
+    title    = "Direct Treatment Effects (% Deviation) on Valgus Torque with 95% CI",
+    subtitle = "Experienced Throwers Only | Percent deviation relative to ideal placement (dashed line = 0% baseline)",
+    x        = "Treatment Condition",
+    y        = "Valgus Torque Percent Deviation (%)",
+    color    = "Thrower"
+  )
+
+print(plot_dbars_ci_experienced)
+
+# 2. Scatter plot with interaction lines of best fit for the highest R^2 model for experienced pitchers
+plot_regression_best_fit_experienced = pulse_2x2_exp %>%
+  mutate(
+    longitudinal_label = factor(
+      if_else(longitudinal_dev == 0, "Ideal (0 cm)", "Displaced (4.5 cm)"),
+      levels = c("Ideal (0 cm)", "Displaced (4.5 cm)")
+    )
+  ) %>%
+  ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgrey", linewidth = 0.8) +
+  geom_jitter(
+    mapping = aes(x = rotational_dev, y = pct_deviation, color = longitudinal_label),
+    width = 2.5,
+    size = 2.5,
+    alpha = 0.7
+  ) +
+  geom_smooth(
+    mapping = aes(x = rotational_dev, y = pct_deviation, color = longitudinal_label, linetype = longitudinal_label),
+    method = "lm",
+    se = TRUE,
+    linewidth = 1.2,
+    alpha = 0.2
+  ) +
+  scale_x_continuous(breaks = c(0, 90), labels = c("0 deg (Ideal)", "90 deg")) +
+  labs(
+    title = "Percent Torque Deviation: Longitudinal x Rotational Interaction Fit",
+    subtitle = "Experienced Pitchers Only",
+    x = "Rotational Misplacement (Degrees)",
+    y = "Valgus Torque Percent Deviation from Ideal (%)",
+    color = "Longitudinal Placement",
+    linetype = "Longitudinal Placement"
+  )
+
+print(plot_regression_best_fit_experienced)
+
+ggsave(
+  "regressionline_experienced.png",
+  plot = plot_regression_best_fit_experienced,
+  width = 11,
+  height = 7,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
